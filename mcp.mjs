@@ -181,18 +181,34 @@ async function save(urls, where) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`the image at ${url} answered ${res.status}`);
     const bytes = Buffer.from(await res.arrayBuffer());
-    const name = urls.length > 1 ? `apimart-${stamp}-${i + 1}.png` : `apimart-${stamp}.png`;
+    // what the bytes are, not what was asked for: APIMart answers JPEG for
+    // some models however the request asked (Nano Banana), and a .png holding
+    // a JPEG is a trap for whatever reads it next
+    const ext = extensionOf(res.headers.get("content-type"), bytes);
+    const name = urls.length > 1 ? `apimart-${stamp}-${i + 1}${ext}` : `apimart-${stamp}${ext}`;
     // the name asked for, when it is a file; a folder (or something with no
     // extension) takes the generated one inside it
     const named = asked !== "" && !/[\\/]$/.test(asked) && /\.[a-z0-9]{2,5}$/i.test(asked);
-    let to = asked === "" ? join(FOLDER, name) : named ? asked : join(asked, name);
-    if (named && urls.length > 1) to = asked.replace(/(\.[a-z0-9]{2,5})$/i, `-${i + 1}$1`);
+    let to = asked === "" ? join(FOLDER, name) : named ? asked.replace(/\.[a-z0-9]{2,5}$/i, ext) : join(asked, name);
+    if (named && urls.length > 1) to = to.replace(/(\.[a-z0-9]{2,5})$/i, `-${i + 1}$1`);
     const abs = isAbsolute(to) ? to : resolve(process.cwd(), to);
     await mkdir(dirname(abs), { recursive: true });
     await writeFile(abs, bytes);
     paths.push(to);
   }
   return paths;
+}
+
+// extensionOf is the extension the bytes are: what the server said, else
+// their magic number.
+function extensionOf(contentType, bytes) {
+  const said = String(contentType ?? "").toLowerCase();
+  if (said.includes("jpeg") || said.includes("jpg")) return ".jpg";
+  if (said.includes("webp")) return ".webp";
+  if (said.includes("png")) return ".png";
+  if (bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return ".jpg";
+  if (bytes.length > 12 && bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP") return ".webp";
+  return ".png";
 }
 
 function said(job) {

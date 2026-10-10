@@ -1,6 +1,6 @@
 {
   "name": "magpie-apimart-image",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "APIMart's image models for magpie: a provider plugin, and a stdio MCP server its library hands the agents",
   "type": "module",
   "main": "./index.mjs",

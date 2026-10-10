@@ -53,7 +53,9 @@ magpie library mcp add apimart-image npx -y -p github:liuyf5231/magpie_apimart m
 | `APIMART_BASE_URL` | `https://api.apimart.ai/v1` | 换网关/自建代理时用 |
 | `APIMART_ANSWER_WITHIN_MS` | `20000` | 一次调用内联等多久；超时就回一个 id，用 `generation_result` 再取 |
 | `APIMART_POLL_MS` | `2500` | 轮询间隔 |
+| `MAGPIE_CONFIG_DIR` | `~/.config/magpie` | magpie 的配置目录（读勾选用） |
 | `APIMART_NO_PROXY` | — | `1` 表示不走代理 |
+| `APIMART_IMAGE_FOLLOW` | 跟随 | `off` 表示忽略 magpie 里给 apimart 的勾选，只用 `APIMART_IMAGE_MODEL` |
 
 **代理**：Node 的 `fetch` 不认代理，而 APIMart 在部分网络下必须走代理。所以 `core.mjs` 在需要时改用 `curl`：优先环境变量（`HTTPS_PROXY`/`ALL_PROXY`/`HTTP_PROXY`），否则读 macOS 的系统代理（`scutil --proxy`，即代理 App 设的那个），都取不到才直连。
 

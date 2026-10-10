@@ -15,6 +15,10 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+const JPEG = Buffer.from(
+  "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwcJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPDs0NDT/wAALCAABAAEBAREA/8QAFAABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AJQA/9k=",
+  "base64",
+);
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
   "base64",
@@ -41,8 +45,9 @@ async function standIn({ polls = 0 } = {}) {
         return send({ code: 200, data: { id: "task_A", status: "completed", progress: 100, cost: 0.02, credits_cost: 0.2, result: { images: [{ url: [`http://127.0.0.1:${server.address().port}/one.png`] }] } } });
       }
       if (req.url.endsWith("/one.png")) {
-        res.writeHead(200, { "content-type": "image/png" });
-        return res.end(PNG);
+        // as Nano Banana does: JPEG whatever the request asked for
+        res.writeHead(200, { "content-type": "image/jpeg" });
+        return res.end(JPEG);
       }
       res.writeHead(404, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: { message: `no ${req.url}` } }));
@@ -64,6 +69,9 @@ async function start({ dir, base, answerWithin = 5000, env = {} }) {
       APIMART_ANSWER_WITHIN_MS: String(answerWithin),
       APIMART_POLL_MS: "100",
       APIMART_IMAGE_MODEL: "gpt-image-2.5-flare",
+      // hermetic unless a case brings its own: without this the real
+      // ~/.config/magpie/providers.json's ticks would decide the test
+      MAGPIE_CONFIG_DIR: join(dir, "no-magpie-here"),
       ...env,
     },
     stdio: ["pipe", "pipe", "pipe"],
@@ -124,7 +132,8 @@ async function start({ dir, base, answerWithin = 5000, env = {} }) {
     assert.ok(path, `the answer names a file: ${drawn.text}`);
     assert.ok(path.startsWith("generated-images/"), `saved in the folder: ${path}`);
     assert.ok((await stat(join(dir, path))).size > 0, "and the file is there");
-    assert.deepEqual([...PNG], [...(await readFile(join(dir, path)))], "with the image APIMart served");
+    assert.deepEqual([...JPEG], [...(await readFile(join(dir, path)))], "with the image APIMart served");
+    assert.ok(path.endsWith(".jpg"), `named for what it is, not what was asked for: ${path}`);
 
     const submit = apimart.seen.find((c) => c.url.endsWith("/images/generations"));
     assert.equal(submit.body !== "", true, "the request carried a body");
@@ -160,6 +169,7 @@ async function start({ dir, base, answerWithin = 5000, env = {} }) {
     assert.match(got.text, /saved to:/, "and the path comes with it");
     const path = /- ([^\n]+)/.exec(got.text)?.[1];
     assert.ok((await stat(join(dir, path))).size > 0, "the file was written after the call answered");
+    assert.ok(path.endsWith(".jpg"), `and named for what it is: ${path}`);
 
     const lost = await mcp.tool("generation_result", { id: "apimart-nope" });
     assert.ok(lost.isError, "an id that isn't ours is an error");
