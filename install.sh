@@ -5,17 +5,14 @@
 #
 #   ./install.sh                       # key from APIMART_API_KEY, else the macOS Keychain
 #   APIMART_API_KEY=sk-… ./install.sh
-#   MAGPIE_APIMART_DIR=~/code/magpie-apimart-image ./install.sh
+#   MAGPIE_APIMART_SPEC=<spec> ./install.sh        # a fork, or a local folder
 #
 # The MCP half needs nothing here: its registration (and the key in its env)
 # lives in magpie's library and arrives with the next sync.
-#
-# Why a clone and not `magpie plugin add github:…`: the repo is private, and
-# Bun resolves such a spec through GitHub's tarball API without credentials
-# (404). git has the user's credentials, so the clone goes through.
 set -euo pipefail
 
 MAGPIE="${MAGPIE:-magpie}"
+SPEC="${MAGPIE_APIMART_SPEC:-github:liuyf5231/magpie_apimart}"
 URL="${MAGPIE_APIMART_URL:-https://github.com/liuyf5231/magpie_apimart.git}"
 DIR="${MAGPIE_APIMART_DIR:-$HOME/.local/share/magpie-apimart-image}"
 PROVIDER=apimart
@@ -27,17 +24,23 @@ if ! command -v "$MAGPIE" >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ -d "$DIR/.git" ]; then
-  say "▸ updating $DIR"
-  git -C "$DIR" pull --ff-only
-else
-  say "▸ cloning into $DIR"
-  mkdir -p "$(dirname "$DIR")"
-  git clone "$URL" "$DIR"
+say "▸ adding the plugin $SPEC"
+if ! "$MAGPIE" plugin add "$SPEC"; then
+  # magpie installs a plugin with Bun, and Bun resolves a github: spec through
+  # GitHub's tarball API without credentials — so a private repository answers
+  # 404. git has the user's credentials, so a clone goes through.
+  say "! $SPEC couldn't be added (a private repository can't be: Bun fetches it without credentials)"
+  if [ -d "$DIR/.git" ]; then
+    say "▸ updating the clone in $DIR"
+    git -C "$DIR" pull --ff-only
+  else
+    say "▸ cloning $URL into $DIR"
+    mkdir -p "$(dirname "$DIR")"
+    git clone "$URL" "$DIR"
+  fi
+  say "▸ adding the plugin $DIR"
+  "$MAGPIE" plugin add "$DIR"
 fi
-
-say "▸ adding the plugin $DIR"
-"$MAGPIE" plugin add "$DIR"
 
 key="${APIMART_API_KEY:-}"
 if [ -z "$key" ] && command -v security >/dev/null 2>&1; then
