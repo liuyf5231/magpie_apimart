@@ -1,0 +1,62 @@
+#!/bin/sh
+# Refuse a commit whose staged files hold something shaped like a credential.
+#
+# The repository is public, so a key committed once is a key the world keeps:
+# .gitignore keeps magpie's own credential files (library.json, mcp.json,
+# sync.json, plugin-auth.json, logins.json) out of `git add`, but this catches
+# what a name-based rule cannot — a key pasted into a .mjs, a README, a test —
+# and it runs on `git add -f` too. Enable it once per clone:
+#
+#   git config core.hooksPath githooks
+#
+# A match that is really a placeholder: `git commit --no-verify`.
+#
+# Only the staged blob is read, and a hit is printed with its middle masked, so
+# the hook itself never puts the secret in a terminal, a log or a paste.
+
+set -eu
+
+# Values long enough to be a key rather than a variable name, a doc placeholder
+# (sk-…) or a test fixture (sk-test, sk-test-key).
+patterns='sk-[A-Za-z0-9_-]{20,}'
+patterns="$patterns"'|sk-ant-[A-Za-z0-9_-]{20,}'
+patterns="$patterns"'|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}'
+patterns="$patterns"'|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}'
+patterns="$patterns"'|xox[baprs]-[A-Za-z0-9-]{10,}'
+patterns="$patterns"'|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'          # a JWT
+patterns="$patterns"'|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+patterns="$patterns"'|(api[_-]?key|apikey|access[_-]?key|secret|password|passphrase|token|authorization)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_./+=-]{24,}'
+
+files=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$files" ] && exit 0
+
+hits=""
+for f in $files; do
+  # the staged blob, not the working tree: what the commit would carry
+  found=$(git show ":$f" 2>/dev/null | grep -a -n -i -E "$patterns" || true)
+  [ -z "$found" ] && continue
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    n=${line%%:*}
+    text=${line#*:}
+    # mask anything long enough to be a secret before showing it
+    shown=$(printf '%s' "$text" | cut -c1-200 | sed -E 's/([A-Za-z0-9_+\/=-]{12})[A-Za-z0-9_+\/=-]{8,}/\1…/g')
+    hits="$hits
+  $f:$n  $shown"
+  done <<EOF
+$found
+EOF
+done
+
+if [ -n "$hits" ]; then
+  cat >&2 <<EOF
+✗ 暂存内容里有疑似密钥，已拦下这次提交：$hits
+
+  · 确实是密钥：从暂存区移除（git restore --staged <文件>），并考虑轮换它——
+    仓库是公开的，一旦推出去就等于公开。
+  · 确实是占位符或测试值：git commit --no-verify 跳过本钩子。
+EOF
+  exit 1
+fi
+
+exit 0

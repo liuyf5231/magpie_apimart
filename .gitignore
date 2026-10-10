@@ -2,9 +2,14 @@ node_modules/
 generated-images/
 package-lock.json
 
-# 绝不入库：这些文件里是明文凭证。
-# library.json 的 MCP 条目 env 存着 APIMART_API_KEY，
-# mcp.json 是 magpie 的 library 同步写进 agent 配置后的同一把 key。
-library.json
-mcp.json
+# 绝不入库：这些文件里是明文凭证（clone 后跑一次 git config core.hooksPath githooks，
+# pre-commit 钩子会在提交前再拦一道；这两层谁都挡不住 git add -f 之外的误操作）。
 .env*
+library.json        # magpie 的 library：MCP 条目 env 里的 APIMART_API_KEY
+mcp.json            # magpie 的 library 同步写进 agent 的同一把 key
+plugin-auth.json    # magpie 的插件登录（插件 provider 的 key）
+logins.json         # magpie 的订阅账号登录
+sync.json           # magpie 的 WebDAV/S3 同步：地址、账号、密码、备份口令
+*.magpie-backup     # 封装的同步备份（口令保护，口令弱时等于明文）
+*.secret.json
+*.pem

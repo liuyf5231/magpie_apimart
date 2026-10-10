@@ -120,6 +120,22 @@ node test-mcp.mjs    # MCP server：本地假 APIMart，不花钱
 
 `test-mcp.mjs` 覆盖：`initialize` / `tools/list` / `tools/call`、`generate_image` 落盘的文件与字节、请求体里的模型/版本/尺寸/鉴权、慢任务先回 id 再用 `generation_result` 取回、以及与 `APIMART_API_KEY` 缺省时回落到 Keychain 的行为。
 
+## 六、不要提交密钥（仓库是公开的）
+
+密钥只活在配置里，不在这个仓库里：`~/.config/magpie/library.json` 的 MCP 条目 `env` 存着 `APIMART_API_KEY`，magpie 的 library 同步又把它明文写进各 agent 的 `mcp.json`。仓库这边有两层防呆：
+
+1. **`.gitignore`** 挡住 magpie 自己的凭证文件：
+   `library.json`、`mcp.json`、`plugin-auth.json`、`logins.json`、`sync.json`（含 WebDAV 账号/密码/备份口令）、`*.magpie-backup`、`.env*`。
+2. **`githooks/pre-commit`** 挡住内容（名字规则挡不住的那种：key 被贴进某个 `.mjs`/README/测试，或 `git add -f`）。每次 clone 后启用一次：
+
+```sh
+git config core.hooksPath githooks
+```
+
+它会扫**暂存区的内容**（不是工作区），匹配 `sk-…`（≥20 字符）、`sk-ant-`、`ghp_`/`gho_`/`github_pat_`、`AKIA`/`ASIA`、`xox*-`、JWT、`BEGIN … PRIVATE KEY`、以及 `password = "…"` 这类 24 字符以上的赋值；命中就拦下提交，并且**只打印掩码后的片段**（钩子自己不会把密钥写进终端或日志）。占位符 `sk-…`、测试假值 `sk-test` / `sk-test-key` 不会误报。确实需要跳过：`git commit --no-verify`。
+
+钩子不能由仓库自己安装（git 的设计如此），所以换机器/重新 clone 后要重跑那一条 `git config`。
+
 ## 五、已知边界
 
 - **只做文生图**：APIMart 要参考图用公网 URL，或走它自己的上传接口（`POST /v1/uploads/images`），尚未接入。
