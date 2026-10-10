@@ -188,6 +188,31 @@ function json(payload, status = 200) {
   console.log("failed task: ok");
 }
 
+// 6b. a poll that fails to make the trip is asked again, not thrown away
+{
+  const plugin = await ApimartPlugin({}, { pollMs: 1, waitMs: 3000 });
+  const loader = await plugin.auth.loader(async () => ({ type: "api", key: "sk-test" }));
+  let polls = 0;
+  await withFetch(
+    (url) => {
+      if (url.endsWith("/images/generations")) return json({ code: 200, data: [{ task_id: "task_A" }] });
+      polls += 1;
+      // the first two trips fail the way a proxy dropping a handshake does,
+      // then one 503, and only then the task's own answer
+      if (polls <= 2) throw new Error("curl: (35) SSL_ERROR_SYSCALL in connection to api.apimart.ai:443");
+      if (polls === 3) return json({ error: { message: "bad gateway" } }, 503);
+      return json(done);
+    },
+    async () => {
+      const res = await loader.fetch(`${BASE}/images/generations`, { method: "POST", body: JSON.stringify({ model: "gpt-image-2.5-flare", prompt: "a cat" }) });
+      assert.equal(res.status, 200, "a blip on the way doesn't cost the image");
+      assert.equal((await res.json()).data.length, 2);
+    },
+  );
+  assert.equal(polls, 4, "two transport failures and a 503 were all asked again");
+  console.log("poll retries: ok");
+}
+
 // 7. an image model asked on chat completions answers 405, a chat model passes through
 {
   const plugin = await ApimartPlugin({}, { pollMs: 1, waitMs: 1000 });

@@ -233,10 +233,22 @@ export async function draw(ask, opts = {}) {
   return { urls, model: asked.model, version: asked.version, ...sizeFields(want) };
 }
 
-// waitFor asks after one task until it is completed, failed, or too slow.
+// waitFor asks after one task until it is completed, failed, or too slow. A
+// poll that fails to make the trip (a proxy dropping the handshake, a 5xx) is
+// asked again: the task is running at APIMart's end whatever this end did, and
+// giving up on it throws an image away that has already been paid for.
 export async function waitFor(id, opts = {}) {
-  const { key = "", pollMs = POLL_MS, waitMs = WAIT_MS, signal, request = fetch, onProgress = () => {} } = opts;
+  const {
+    key = "",
+    pollMs = POLL_MS,
+    waitMs = WAIT_MS,
+    signal,
+    request = fetch,
+    onProgress = () => {},
+    transportTries = 5,
+  } = opts;
   const deadline = Date.now() + waitMs;
+  let strikes = 0;
   for (;;) {
     try {
       await sleep(pollMs, signal);
@@ -250,9 +262,22 @@ export async function waitFor(id, opts = {}) {
       const text = await res.text();
       const payload = json(text);
       if (res.status >= 300) {
+        if (res.status >= 500 || res.status === 429) {
+          if (++strikes < transportTries) {
+            onProgress({ id, status: `APIMart answered ${res.status}: asking again` });
+            continue;
+          }
+        }
         return { error: `APIMart's task ${id}: ${res.status} ${messageOf(payload) ?? text.slice(0, 200)}`.trim(), status: res.status };
       }
-      if (!payload) return { error: `APIMart's task answer isn't JSON: ${text.slice(0, 200)}`, status: 502 };
+      if (!payload) {
+        if (++strikes < transportTries) {
+          onProgress({ id, status: "APIMart's answer didn't read: asking again" });
+          continue;
+        }
+        return { error: `APIMart's task answer isn't JSON: ${text.slice(0, 200)}`, status: 502 };
+      }
+      strikes = 0; // it answered: whatever went wrong on the way is over
       const data = payload.data ?? {};
       const status = String(data.status ?? "").toLowerCase();
       if (status === "completed" || status === "succeeded" || status === "success") {
@@ -267,7 +292,11 @@ export async function waitFor(id, opts = {}) {
       onProgress({ id, status: status || "processing", progress: data.progress });
     } catch (e) {
       if (signal?.aborted) return { error: "the request was cancelled", status: 499 };
-      return { error: `APIMart's task ${id} couldn't be asked after: ${e?.message ?? e}`, status: 502 };
+      if (++strikes < transportTries) {
+        onProgress({ id, status: `${e?.message ?? e}: asking again` });
+        continue;
+      }
+      return { error: `APIMart's task ${id} couldn't be asked after ${transportTries} tries: ${e?.message ?? e}`, status: 502 };
     }
   }
 }

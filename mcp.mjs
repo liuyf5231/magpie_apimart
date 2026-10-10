@@ -236,4 +236,4 @@ lines.on("line", async (line) => {
 lines.on("close", () => process.exit(0));
 process.on("SIGTERM", () => process.exit(0));
 process.on("SIGINT", () => process.exit(0));
-log(`ready · model ${defaultModel} · size ${defaultSize} · answering within ${answerWithin / 1000}s`);
+log(`ready · v${VERSION} · model ${defaultModel} · size ${defaultSize} · answering within ${answerWithin / 1000}s`);

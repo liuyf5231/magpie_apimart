@@ -1,6 +1,6 @@
 {
   "name": "magpie-apimart-image",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "APIMart's image models for magpie: a provider plugin, and a stdio MCP server its library hands the agents",
   "type": "module",
   "main": "./index.mjs",
@@ -15,14 +15,23 @@
   "scripts": {
     "test": "node test.mjs && node test-mcp.mjs"
   },
-  "keywords": ["opencode", "opencode-plugin", "magpie", "apimart", "mcp", "image-generation"],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "magpie",
+    "apimart",
+    "mcp",
+    "image-generation"
+  ],
   "license": "MIT",
   "magpie": {
     "maxConcurrency": 4,
     "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzBiM2QzMyIvPjxwYXRoIGQ9Ik02IDI0TDE2IDd2OWw0LTZ2MTBsNi0xMHYxN3oiIGZpbGw9IiM0YWRlYzAiLz48L3N2Zz4=",
     "options": {
       "models": [],
-      "versions": { "gpt-image-2.5-ext": "sunburst" },
+      "versions": {
+        "gpt-image-2.5-ext": "sunburst"
+      },
       "extVersion": "sunburst",
       "discover": false,
       "pollMs": 2500,
