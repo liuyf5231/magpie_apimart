@@ -313,6 +313,7 @@ export function requester({ proxy = proxyFor() } = {}) {
 
 // proxyFor is the proxy to reach APIMart through: the environment's, else the
 // system's on macOS (what a proxy app sets), else none.
+// (MAGPIE_CONFIG_DIR names magpie's own folder, for the ticked models below.)
 let cachedProxy;
 export function proxyFor(env = process.env) {
   if (cachedProxy !== undefined) return cachedProxy;
@@ -323,7 +324,7 @@ export function proxyFor(env = process.env) {
 }
 
 // off is a variable that says a switch is on: 1, true, yes or on.
-function off(v) {
+export function off(v) {
   return ["1", "true", "yes", "on"].includes(String(v ?? "").trim().toLowerCase());
 }
 

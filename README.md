@@ -57,6 +57,29 @@ magpie library mcp add apimart-image npx -y -p github:liuyf5231/magpie_apimart m
 
 **代理**：Node 的 `fetch` 不认代理，而 APIMart 在部分网络下必须走代理。所以 `core.mjs` 在需要时改用 `curl`：优先环境变量（`HTTPS_PROXY`/`ALL_PROXY`/`HTTP_PROXY`），否则读 macOS 的系统代理（`scutil --proxy`，即代理 App 设的那个），都取不到才直连。
 
+### 模型怎么选：跟随 magpie 的勾选
+
+magpie 供应商页（APIMart）那排模型 chip 的勾选，就是 MCP 工具的模型选择器（它读 `~/.config/magpie/providers.json` 里 `apimart` 那行的 `models`）。每次调用都重读，**改勾选即时生效，不用重启 agent**。
+
+| 情况 | 实际用哪个模型 |
+|---|---|
+| 调用里点名 `model`，且它在勾选集内 | 用它 |
+| 调用里点名 `model`，但没勾选 | 报错，并列出勾选了哪些 |
+| 没点名，勾选集里有 `APIMART_IMAGE_MODEL` 指定的那个 | 用它（保持你设的默认） |
+| 没点名，勾选集里没有那个 | 用勾选的第一个 |
+| 一个都没勾（或读不到 magpie 的配置） | 回到 `APIMART_IMAGE_MODEL`，不限制 |
+
+想"只勾一个、出图就用它"：
+
+```sh
+magpie provider models apimart gpt-image-2.5-ext     # 只勾这一个（也是唯一允许的）
+magpie provider models apimart                       # 看现在勾了哪些
+```
+
+顺带好处：这排勾选同时决定这些模型是否出现在 agent 的**聊天**模型列表里（magpie 的语义是"Agent 看到的是已勾选的模型"），所以只勾一个，模型选择器也跟着干净。不想跟随勾选就把该条目的 `env` 加上 `"APIMART_IMAGE_FOLLOW": "off"`。
+
+> 网关那条路（插件 + `/v1/images/generations`）**跟随不了**这排勾选：magpie 的 `Drawers()` 对任何带账号的 provider 直接返回空，出图模型由 magpie Settings 里的 `imageGen` 决定。所以勾选只对本 MCP 工具有效。
+
 ## 二、插件入口：gateway 级能力（每台机器两条命令）
 
 插件不在同步范围里（`plugins.json`、插件文件夹、Bun 运行时都不同步），所以每台机器要装一次：

@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -53,7 +53,7 @@ async function standIn({ polls = 0 } = {}) {
 }
 
 // start runs the MCP server the way an agent would, over a pipe.
-async function start({ dir, base, answerWithin = 5000 }) {
+async function start({ dir, base, answerWithin = 5000, env = {} }) {
   const child = spawn(process.execPath, [new URL("./mcp.mjs", import.meta.url).pathname], {
     cwd: dir,
     env: {
@@ -64,6 +64,7 @@ async function start({ dir, base, answerWithin = 5000 }) {
       APIMART_ANSWER_WITHIN_MS: String(answerWithin),
       APIMART_POLL_MS: "100",
       APIMART_IMAGE_MODEL: "gpt-image-2.5-flare",
+      ...env,
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -170,7 +171,50 @@ async function start({ dir, base, answerWithin = 5000 }) {
   }
 }
 
-// 3. APIMart's own failure is told to the agent, not swallowed
+// 4. the models magpie's Providers page ticks decide what is drawn with
+{
+  const dir = await mkdtemp(join(tmpdir(), "mcp-test-"));
+  const cfg = await mkdtemp(join(tmpdir(), "magpie-cfg-"));
+  const apimart = await standIn({ polls: 0 });
+  const write = async (models) => writeFile(join(cfg, "providers.json"), JSON.stringify({ providers: [{ id: "apimart", models }] }));
+  try {
+    // one ticked: it is what an unnamed call draws with, and the only one allowed
+    await write(["gpt-image-2.5-sunburst"]);
+    let mcp = await start({ dir, base: `http://127.0.0.1:${apimart.port}/v1`, env: { MAGPIE_CONFIG_DIR: cfg } });
+    let drawn = await mcp.tool("generate_image", { prompt: "a cat" });
+    assert.ok(!drawn.isError, drawn.text);
+    assert.match(drawn.text, /Drew with gpt-image-2.5-sunburst/, `the ticked model is the one used: ${drawn.text}`);
+    let sent = JSON.parse(apimart.seen.filter((c) => c.url.endsWith("/images/generations")).pop().body);
+    assert.equal(sent.model, "gpt-image-2.5-sunburst");
+    const refused = await mcp.tool("generate_image", { prompt: "a cat", model: "gpt-image-2.5-flare" });
+    assert.ok(refused.isError, "a model that isn't ticked isn't drawn with");
+    assert.match(refused.text, /勾选的是 gpt-image-2\.5-sunburst/, `and it says which are ticked: ${refused.text}`);
+    mcp.stop();
+
+    // several ticked: all of them are allowed, and the environment's default
+    // is used while it is one of them
+    await write(["gpt-image-2.5-sunburst", "gpt-image-2.5-ext"]);
+    mcp = await start({ dir, base: `http://127.0.0.1:${apimart.port}/v1`, env: { MAGPIE_CONFIG_DIR: cfg, APIMART_IMAGE_MODEL: "gpt-image-2.5-ext" } });
+    drawn = await mcp.tool("generate_image", { prompt: "a dog" });
+    assert.match(drawn.text, /Drew with gpt-image-2.5-ext/, `the environment's default, while ticked, wins: ${drawn.text}`);
+    const other = await mcp.tool("generate_image", { prompt: "a bird", model: "gpt-image-2.5-sunburst" });
+    assert.ok(!other.isError, "another ticked one may be named");
+    mcp.stop();
+
+    // APIMART_IMAGE_FOLLOW=off: the ticks are ignored, the environment rules
+    mcp = await start({ dir, base: `http://127.0.0.1:${apimart.port}/v1`, env: { MAGPIE_CONFIG_DIR: cfg, APIMART_IMAGE_FOLLOW: "off" } });
+    drawn = await mcp.tool("generate_image", { prompt: "a fish", model: "gemini-nano-banana-2.1-ext" });
+    assert.ok(!drawn.isError && /Drew with gemini-nano-banana-2\.1-ext/.test(drawn.text), `untracked when told to: ${drawn.text}`);
+    mcp.stop();
+    console.log("ticked models: ok");
+  } finally {
+    await apimart.close();
+    await rm(dir, { recursive: true, force: true });
+    await rm(cfg, { recursive: true, force: true });
+  }
+}
+
+// 5. APIMart's own failure is told to the agent, not swallowed
 {
   const dir = await mkdtemp(join(tmpdir(), "mcp-test-"));
   const apimart = await standIn({ polls: 1 });

@@ -21,9 +21,12 @@
 //   APIMART_ANSWER_WITHIN_MS default 20000 — how long one call waits inline
 //   APIMART_POLL_MS          default 2500 — how often a task is asked after
 //   APIMART_NO_PROXY=1       reach APIMart without a proxy (a local stand-in)
+//   APIMART_IMAGE_FOLLOW=off ignore the models magpie's Providers page ticks,
+//                            and go by APIMART_IMAGE_MODEL alone
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { draw, keyFrom, requester, sleep, whole, ApimartError, WAIT_MS } from "./core.mjs";
 const SERVER = "apimart-image";
@@ -42,6 +45,43 @@ const defaultQuality = process.env.APIMART_IMAGE_QUALITY ?? "medium";
 const answerWithin = whole(process.env.APIMART_ANSWER_WITHIN_MS, 500, 300000) ?? 20000;
 const pollMs = whole(process.env.APIMART_POLL_MS, 100, 60000);
 const call = requester();
+
+// ticked are the models magpie's Providers page has ticked for the apimart
+// provider: what its `Agent 看到的是已勾选的模型` list holds, read from
+// magpie's own providers.json. magpie's tick list is the one choice of the
+// user's this process can read — the gateway's own drawing goes by Settings'
+// imageGen, which lives inside magpie. null when nothing is ticked, magpie
+// isn't there, or APIMART_IMAGE_FOLLOW=off says not to follow them.
+async function ticked() {
+  const follow = String(process.env.APIMART_IMAGE_FOLLOW ?? "on").trim().toLowerCase();
+  if (["off", "no", "false", "0"].includes(follow)) return null;
+  const dir = process.env.MAGPIE_CONFIG_DIR || join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "magpie");
+  let cfg;
+  try {
+    cfg = JSON.parse(await readFile(join(dir, "providers.json"), "utf8"));
+  } catch {
+    return null;
+  }
+  for (const id of ["apimart", "apimart-plugin"]) {
+    const row = (cfg?.providers ?? []).find((p) => p?.id === id);
+    const ids = (row?.models ?? []).filter((m) => typeof m === "string" && m !== "");
+    if (ids.length > 0) return ids;
+  }
+  return null;
+}
+
+// chosen is the model a call draws with: the one it names, which has to be one
+// the user ticked; else what the environment names while it is ticked too,
+// else the first ticked one; and with nothing ticked, what the environment
+// says, as before.
+async function chosen(asked) {
+  const allow = await ticked();
+  const want = typeof asked === "string" ? asked.trim() : "";
+  if (!allow) return want || defaultModel;
+  if (want === "") return allow.includes(defaultModel) ? defaultModel : allow[0];
+  if (allow.includes(want)) return want;
+  throw new Error(`magpie 里给 apimart 勾选的是 ${allow.join("、")}，没有 ${want}：改勾选（magpie provider models apimart …），或把 APIMART_IMAGE_FOLLOW 设为 off 不跟随勾选`);
+}
 
 // jobs are the drawings this process has going or has finished, by id: a call
 // that answered "not ready" leaves one running here.
@@ -69,9 +109,9 @@ const schema = {
         description:
           "Which APIMart model: gpt-image-2.5-flare or gpt-image-2.5-sunburst (official line, token billing), " +
           "gpt-image-2.5-ext (Ext line, flat per image, cheaper at high quality/size), " +
-          "gemini-nano-banana-2.1 or gemini-nano-banana-2.1-ext. Default: " +
-          defaultModel +
-          ".",
+          "gemini-nano-banana-2.1 or gemini-nano-banana-2.1-ext. " +
+          "When magpie's Providers page has some of them ticked, only those are allowed and the first ticked one is the default; " +
+          "with none ticked the default is " + defaultModel + ".",
       },
       size: { type: "string", description: "WIDTHxHEIGHT (1024x1024, 2048x2048 = 2K, 2880x2880 = 4K), an aspect ratio (16:9), or auto. Default: " + defaultSize + "." },
       quality: { type: "string", description: "low, medium, high, xhigh, max — GPT Image 2.5 only, and higher costs more on the official line. Default: " + defaultQuality + "." },
@@ -100,7 +140,7 @@ function fail(id, code, message) {
 
 // start begins a drawing and gives back its job at once: it goes on whether or
 // not a call is still waiting on it.
-function start(args) {
+async function start(args) {
   const id = `apimart-${Date.now().toString(36)}-${(answered += 1)}`;
   const job = { id, started: Date.now(), done: false };
   jobs.set(id, job);
@@ -164,7 +204,13 @@ async function callTool(name, args) {
   if (name === TOOL) {
     const prompt = typeof args?.prompt === "string" ? args.prompt.trim() : "";
     if (prompt === "") return { content: [{ type: "text", text: "say what to draw in prompt" }], isError: true };
-    const job = start({ ...args, prompt });
+    let model;
+    try {
+      model = await chosen(args?.model);
+    } catch (e) {
+      return { content: [{ type: "text", text: String(e?.message ?? e) }], isError: true };
+    }
+    const job = await start({ ...args, model });
     return await promiseOf(job);
   }
   if (name === RESULT_TOOL) {
