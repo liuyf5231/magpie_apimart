@@ -25,6 +25,8 @@ magpie 的 WebDAV/S3 同步只搬 5 个部分：`providers` / `settings` / `prof
 magpie library mcp add apimart-image npx -y -p github:liuyf5231/magpie_apimart magpie-apimart-mcp agents=pi,dsh
 ```
 
+private 仓库也可以用 `npx github:`：npm 是用 `git` 拉取（走本地凭据助手），不是 Bun 那套 tarball API —— 已实测通过。前提是每台机器上 git 对 GitHub 有凭据（`gh auth login` 或钥匙串里存过）；没有凭据的机器请把仓库改成 public，或把命令换成 `node <同步过来的脚本路径>`。
+
 `magpie library mcp add` 不能设 env，所以 key 要写进 `~/.config/magpie/library.json` 里该条目的 `env`：
 
 ```json
@@ -55,14 +57,23 @@ magpie library mcp add apimart-image npx -y -p github:liuyf5231/magpie_apimart m
 
 **代理**：Node 的 `fetch` 不认代理，而 APIMart 在部分网络下必须走代理。所以 `core.mjs` 在需要时改用 `curl`：优先环境变量（`HTTPS_PROXY`/`ALL_PROXY`/`HTTP_PROXY`），否则读 macOS 的系统代理（`scutil --proxy`，即代理 App 设的那个），都取不到才直连。
 
-## 二、插件入口：gateway 级能力（每台机器两条命令）
+## 二、插件入口：gateway 级能力（每台机器跑一次 install.sh）
 
-插件不在同步范围里（`plugins.json`、插件文件夹、Bun 运行时都不同步），所以每台机器要装一次：
+插件不在同步范围里（`plugins.json`、插件文件夹、Bun 运行时都不同步），所以每台机器要装一次。仓库里给了 `install.sh`：
 
 ```sh
-magpie plugin add github:liuyf5231/magpie_apimart
-magpie plugin login apimart          # 填 sk-…
+git clone https://github.com/liuyf5231/magpie_apimart.git ~/.local/share/magpie-apimart-image
+~/.local/share/magpie-apimart-image/install.sh     # clone/更新 + plugin add + 用 Keychain 里的 key 登录
 ```
+
+或者手工两条：
+
+```sh
+magpie plugin add <本仓库的克隆路径>      # 见下面的说明：不能用 github: 简写
+magpie plugin login apimart               # 填 sk-…
+```
+
+> **为什么不能用 `magpie plugin add github:liuyf5231/magpie_apimart`**：本仓库是 private，而 magpie 的插件安装走 Bun，Bun 对 `github:` spec 是拿 GitHub 的 tarball API（`api.github.com/repos/…/tarball`）且不带任何凭据 → 404。`git clone` 走的是 git 自己的凭据（gh/钥匙串），所以能过。仓库改成 public 之后这个一行命令就能用了（公开仓库里没有密钥）。
 
 之后任何客户端都能点名出图：
 
@@ -113,6 +124,7 @@ node test-mcp.mjs    # MCP server：本地假 APIMart，不花钱
 ## 五、已知边界
 
 - **只做文生图**：APIMart 要参考图用公网 URL，或走它自己的上传接口（`POST /v1/uploads/images`），尚未接入。
+- 仓库是 private，所以 `magpie plugin add github:…` 不可用（Bun 的 tarball API 无凭据），要用 clone + 路径；`npx -p github:…` 可用（走 git）。
 - 单张最长等 4 分钟（插件 `waitMs` / MCP 的一次调用 20 秒内联 + `generation_result` 续等）。magpie 自己的 drawTimeout 是 5 分钟。
 - 图片 URL 完成后 **72 小时**失效：MCP 入口会把图落成项目文件，插件入口把 URL 交给调用方，及时转存。
 - 参数非法时 APIMart 不会同步 4xx，而是提交成功、轮询到 `failed` 才报错；失败的生成全额退款。
