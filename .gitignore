@@ -1,3 +1,10 @@
 node_modules/
 generated-images/
 package-lock.json
+
+# 绝不入库：这些文件里是明文凭证。
+# library.json 的 MCP 条目 env 存着 APIMART_API_KEY，
+# mcp.json 是 magpie 的 library 同步写进 agent 配置后的同一把 key。
+library.json
+mcp.json
+.env*
