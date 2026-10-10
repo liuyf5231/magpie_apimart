@@ -22,12 +22,16 @@
 //   APIMART_POLL_MS          default 2500 — how often a task is asked after
 //   APIMART_NO_PROXY=1       reach APIMart without a proxy (a local stand-in)
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { draw, keyFrom, requester, sleep, whole, ApimartError, WAIT_MS } from "./core.mjs";
 const SERVER = "apimart-image";
-const VERSION = "1.0.0";
+// the package's own version, so a log line says which code is running (a
+// cached npx install is the usual reason one machine behaves unlike another)
+const VERSION = await readFile(new URL("./package.json", import.meta.url), "utf8")
+  .then((text) => JSON.parse(text).version ?? "0.0.0")
+  .catch(() => "0.0.0");
 const FOLDER = "generated-images";
 const TOOL = "generate_image";
 const RESULT_TOOL = "generation_result";
